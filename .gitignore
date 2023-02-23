@@ -1,0 +1,7 @@
+# Haskell
+dist-newstyle/
+cabal.project.local*
+bench-*
+bench.*
+# Emacs
+.\#*

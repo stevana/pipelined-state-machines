@@ -1,0 +1,227 @@
+cabal-version:      2.4
+name:               pipelined-state-machines
+version:            0.0.0
+synopsis:           High performance inter-thread messaging library
+description:
+  See README at <https://github.com/stevana/pipelined-state-machines#readme>
+
+bug-reports:        https://github.com/stevana/pipelined-state-machines/issues
+license:            MIT
+license-file:       LICENSE
+author:             Stevan Andjelkovic, Daniel Gustafsson
+maintainer:         stevana@users.noreply.github.com
+copyright:          Copyright (c) 2021 Symbiont Inc, 2022-2023 Stevan Andjelkovic
+category:           Concurrency, Data Structures
+extra-source-files:
+  CHANGELOG.md
+  LICENSE
+  README.md
+  benchmark.sh
+
+tested-with:        GHC ==9.0.2
+
+common common-build-depends
+  build-depends:
+    , async
+    , atomic-primops
+    , base            ^>=4.15.0.0
+    , ghc-prim
+    , stm
+    , vector
+
+library
+  import:           common-build-depends
+  hs-source-dirs:   src/
+  exposed-modules:
+    Disruptor
+    Disruptor.AtomicCounterPadded
+    Disruptor.MP
+    Disruptor.MP.Consumer
+    Disruptor.MP.Producer
+    Disruptor.MP.RingBuffer
+    Disruptor.SequenceNumber
+    Disruptor.SP
+    Disruptor.SP.Consumer
+    Disruptor.SP.Producer
+    Disruptor.SP.RingBuffer
+    Disruptor.SP.Unboxed.Consumer
+    Disruptor.SP.Unboxed.Producer
+    Disruptor.SP.Unboxed.RingBuffer
+
+  ghc-options:      -O2
+  default-language: Haskell2010
+
+test-suite test
+  import:           common-build-depends
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test/
+  main-is:          Main.hs
+  other-modules:
+    DisruptorTest
+    TastyDiscover
+
+  build-depends:
+    , containers
+    , pipelined-state-machines
+    , HUnit
+    , QuickCheck
+    , tasty
+    , tasty-hunit
+    , tasty-quickcheck
+
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N -fno-ignore-asserts
+  default-language: Haskell2010
+
+executable readme-pipeline-example
+  import:           common-build-depends
+  main-is:          ReadmePipelineExample.hs
+  build-depends:    pipelined-state-machines, time
+  hs-source-dirs:   app
+  default-language: Haskell2010
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+
+executable readme-disruptor-example
+  import:           common-build-depends
+  main-is:          ReadmeDisruptorExample.hs
+  build-depends:    pipelined-state-machines
+  hs-source-dirs:   app
+  default-language: Haskell2010
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+
+common bench-common
+  hs-source-dirs:   bench
+  build-depends:
+    , async
+    , base
+    , time
+    , directory
+  other-modules:    Common
+
+  -- Some of these options are taking from:
+  --   https://wiki.haskell.org/Performance/GHC#Use_optimisation
+  -- XXX: try with -fllvm
+
+  -- To inspect core:
+  -- -fforce-recomp
+  -- -ddump-simpl
+  -- -dsuppress-all
+  -- -ddump-to-file
+  --
+  -- To produce event log:
+  -- -threaded -eventlog -rtsopts -with-rtsopts=-N
+  ghc-options:
+    -O2 -fproc-alignment=64 -fexcess-precision -fasm -optc-O3
+    -optc-ffast-math -threaded -rtsopts -with-rtsopts=-N
+
+  default-language: Haskell2010
+
+common bench-common-sp
+  import:         bench-common
+  hs-source-dirs: bench/SP
+
+common bench-common-mp
+  import:         bench-common
+  hs-source-dirs: bench/MP
+
+benchmark bench-singleops
+  import:        bench-common
+  main-is:       SingleOps.hs
+  build-depends:
+    , atomic-primops
+    , pipelined-state-machines
+
+  type:          exitcode-stdio-1.0
+
+benchmark bench-sp
+  import:        bench-common-sp
+  main-is:       Disruptor.hs
+  build-depends: pipelined-state-machines
+  type:          exitcode-stdio-1.0
+
+benchmark bench-sp-unboxed
+  import:        bench-common-sp
+  main-is:       DisruptorUnboxed.hs
+  build-depends: pipelined-state-machines
+  type:          exitcode-stdio-1.0
+
+benchmark bench-sp-chan
+  import:  bench-common-sp
+  main-is: Chan.hs
+  type:    exitcode-stdio-1.0
+
+benchmark bench-sp-tbqueue
+  import:        bench-common-sp
+  main-is:       TBQueue.hs
+  build-depends: stm
+  type:          exitcode-stdio-1.0
+
+benchmark bench-sp-chaselev-deque
+  import:        bench-common-sp
+  main-is:       ChaseLevDeque.hs
+  build-depends: chaselev-deque
+  type:          exitcode-stdio-1.0
+
+benchmark bench-sp-lockfree-queue
+  import:        bench-common-sp
+  main-is:       LockFreeQueue.hs
+  build-depends: lockfree-queue
+  type:          exitcode-stdio-1.0
+
+benchmark bench-sp-unagi-chan
+  import:        bench-common-sp
+  main-is:       UnagiChan.hs
+  build-depends: unagi-chan
+  type:          exitcode-stdio-1.0
+
+benchmark bench-mp
+  import:        bench-common-mp
+  main-is:       Disruptor.hs
+  build-depends: pipelined-state-machines
+  type:          exitcode-stdio-1.0
+
+benchmark bench-mp-chan
+  import:  bench-common-mp
+  main-is: Chan.hs
+  type:    exitcode-stdio-1.0
+
+benchmark bench-mp-tbqueue
+  import:        bench-common-mp
+  main-is:       TBQueue.hs
+  build-depends: stm
+  type:          exitcode-stdio-1.0
+
+benchmark bench-mp-unagi-chan
+  import:        bench-common-mp
+  main-is:       UnagiChan.hs
+  build-depends: unagi-chan
+  type:          exitcode-stdio-1.0
+
+benchmark bench-mp-lockfree-queue
+  import:        bench-common-mp
+  main-is:       LockFreeQueue.hs
+  build-depends: lockfree-queue
+  type:          exitcode-stdio-1.0
+
+benchmark bench-mp-logging
+  import:        bench-common-mp
+  main-is:       Logging.hs
+  build-depends: pipelined-state-machines, bytestring
+  type:          exitcode-stdio-1.0
+
+benchmark bench-mp-fast-logger
+  import:        bench-common-mp
+  main-is:       FastLogger.hs
+  build-depends: fast-logger
+  type:          exitcode-stdio-1.0
+
+benchmark bench-mp-logging10
+  import:        bench-common-mp
+  main-is:       Logging10.hs
+  build-depends: pipelined-state-machines, bytestring
+  type:          exitcode-stdio-1.0
+
+benchmark bench-mp-fast-logger10
+  import:        bench-common-mp
+  main-is:       FastLogger10.hs
+  build-depends: fast-logger
+  type:          exitcode-stdio-1.0
