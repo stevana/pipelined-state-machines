@@ -4,13 +4,61 @@ An experiment in declaratively programming parallel pipelines of state machines.
 
 ## Motivation
 
-* Airbus pipelining example https://youtu.be/oxjT7veKi9c?t=2682
+Imagine a flat complex in Sweden. Being the socialist utopia Sweden is there's a
+shared laundery room which the people in the flat complex can book. In the
+laundry room there's everything one needs to wash, dry and iron your clothes.
+You don't even need to bring your own laundry detergent!
 
-  - 2 per day, 2 months from order to delivery, 100000 person hours to build one
-    from scratch, how do they deliver two per day when it takes two months to
-    build them? Pipelining!
+Lets call three people living there Ann, Bo and Cecilia, and lets assume they
+all want to use the laundry room. Depending on how the booking system is
+implemented the total time it would take for all three people to do their
+laundry varies.
 
-  - Hardware: pipelining!
+For example if the booking system allocates a big time slot per person in which
+that person can do the whole cycle of *W*ashing, *D*rying and *I*roning then,
+assuming each step takes one time unit, we get a situation like this:
+
+          Person
+            ^
+        Ann | W D I
+         Bo |       W D I
+    Cecilia |             W D I
+            +-------------------> Time
+            0 1 2 3 4 5 6 7 8 9
+
+If the booking system is more granular and allows booking a time slot per step
+then we can get a situation that looks like this:
+
+          Person
+            ^
+        Ann | W D I
+         Bo |   W D I
+    Cecilia |     W D I
+            +-------------------> Time
+            0 1 2 3 4 5 6 7 8 9
+
+It should be clear that the total time is shorter in this case, because the
+machines are utilised better. Also note that if each person would start a new
+washing after they finish ironing the first one and so on then the time savings
+would be even greater.
+
+This optimisation is called pipelining.
+
+It's used a lot in manufacturing, for example Airbus
+[builds](https://youtu.be/oxjT7veKi9c?t=2682) two airplanes per day. If you were
+to order a plane today you'd get it delivered in two months time. How is that
+they deliver two per day if it takes two months to build them? Pipelining!
+
+It's also used inside CPUs to [pipeline
+instructions](https://en.wikipedia.org/wiki/Instruction_pipelining).
+
+The rest of this document is an experiment in how we can construct such
+pipelining in software in a declarative way.
+
+## Usage
+
+The workers or stages in our pipeline will be state machines of the following
+type.
 
 ```haskell
 data SM s a b where
@@ -20,13 +68,22 @@ data SM s a b where
   Snd     :: SM s (a, b) b
   (:&&&)  :: SM s a c -> SM s a d -> SM s a (c, d)
   (:***)  :: SM s a c -> SM s b d -> SM s (a, b) (c, d)
-  SlowIO  :: SM s a a
+  SlowIO  :: SM s a a -- Simulate a slow I/O computation.
+```
 
+Here's an example of a stage which takes an ordered pair as input and swaps the
+elements of the pair.
+
+```haskell
 swap :: SM () (a, b) (b, a)
 swap = Snd :*** Fst `Compose` copy `Compose` SlowIO
   where
     copy = Id :&&& Id
+```
 
+We can `interpret` such state machines into plain functions as follows.
+
+```haskell
 interpret :: SM s a b -> (a -> s -> IO (s, b))
 interpret Id            x s = return (s, x)
 interpret (Compose g f) x s = do
@@ -45,21 +102,41 @@ interpret (f :*** g)    x s = do
 interpret SlowIO x s = do
   threadDelay 200000 -- 0.2s
   return (s, x)
+```
 
+Next lets have a look at how we can construct pipelines of such state machines.
+
+```haskell
 data P a b where
   SM     :: String -> SM s a b -> s -> P a b
   (:>>>) :: P a b -> P b c -> P a c
-  Shard  :: P a b -> P a b
+```
 
+The following is an example pipeline where there's only one stage in which we do
+our pair swapping three times.
+
+```haskell
 swapsSequential :: P (a, b) (b, a)
 swapsSequential = SM "three swaps" (swap `Compose` swap `Compose` swap) ()
+```
 
+The above corresponds to our coarse grained booking system where the laundry was
+booked for the whole cycle. Whereas the following corresponds to the more fine
+grained approach where we get pipelining.
+
+```haskell
 swapsPipelined :: P (a, b) (b, a)
 swapsPipelined =
   SM "first swap"  swap () :>>>
   SM "second swap" swap () :>>>
   SM "third swap"  swap ()
+```
 
+A pipeline can be deployed, we'll use the following type to keep track of queue
+associated with the pipeline as well as the name and pids of the state machines
+involved in the pipeline.
+
+```haskell
 data Deployment a = Deployment
   { queue :: TQueue a
   , pids  :: [(String, Async ())]
@@ -69,6 +146,18 @@ names :: Deployment a -> String
 names = bracket . intercalate "," . reverse . map fst . pids
   where
     bracket s = "[" ++ s ++ "]"
+```
+
+Here's the actual `deploy`ment function which takes a pipeline and gives back an
+input-queue and a `Deployment` which holds the output-queue and the names and
+pids of the state machines.
+
+```haskell
+deploy :: P a b -> IO (TQueue a, Deployment b)
+deploy p = do
+  q <- newTQueueIO
+  d <- deploy' p (Deployment q [])
+  return (q, d)
 
 deploy' :: P a b -> Deployment a -> IO (Deployment b)
 deploy' (SM name sm s0) d = do
@@ -86,53 +175,26 @@ deploy' (SM name sm s0) d = do
 deploy' (sm :>>> sm') d = do
   d' <- deploy' sm d
   deploy' sm' d'
-deploy' (Shard p) d = do
-  let qIn = queue d
-  qEven  <- newTQueueIO
-  qOdd   <- newTQueueIO
-  pidIn  <- async $ shardQIn qIn qEven qOdd
-  dEven  <- deploy' p (Deployment qEven [])
-  dOdd   <- deploy' p (Deployment qOdd [])
-  qOut   <- newTQueueIO
-  pidOut <- async $ shardQOut (queue dEven) (queue dOdd) qOut
-  return (Deployment qOut (("shardIn:  " ++ names dEven ++ " & " ++ names dOdd, pidIn) :
-                           ("shardOut: " ++ names dEven ++ " & " ++ names dOdd, pidOut) :
-                           pids dEven ++ pids dOdd ++ pids d))
-  where
-    shardQIn :: TQueue a -> TQueue a -> TQueue a -> IO ()
-    shardQIn  qIn qEven qOdd = do
-      atomically (readTQueue qIn >>= writeTQueue qEven)
-      shardQIn qIn qOdd qEven
+```
 
-    shardQOut :: TQueue a -> TQueue a -> TQueue a -> IO ()
-    shardQOut qEven qOdd qOut = do
-      atomically (readTQueue qEven >>= writeTQueue qOut)
-      shardQOut qOdd qEven qOut
+```haskell
+data PipelineKind = Sequential | Pipelined
+  deriving Show
+```
 
-deploy :: P a b -> IO (TQueue a, Deployment b)
-deploy p = do
-  q <- newTQueueIO
-  d <- deploy' p (Deployment q [])
-  return (q, d)
-
-swapsSharded :: P (a, b) (b, a)
-swapsSharded =
-  Shard (SM "first swap"  swap ()) :>>>
-  Shard (SM "second swap" swap ()) :>>>
-  Shard (SM "third swap"  swap ())
-
-data PipelineKind = Sequential | Pipelined | Sharded
-
+```haskell
 main :: IO ()
 main = do
-  mapM_ libMain [Sequential, Pipelined, Sharded]
+  mapM_ libMain [Sequential, Pipelined]
+```
 
+```haskell
 libMain :: PipelineKind -> IO ()
 libMain k = do
   (q, d) <- deploy $ case k of
                        Sequential -> swapsSequential
                        Pipelined  -> swapsPipelined
-                       Sharded    -> swapsSharded
+  print k
   putStrLn $ "Pids: " ++ names d
   start <- getCurrentTime
   forM_ [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)] $ \x ->
@@ -141,22 +203,93 @@ libMain k = do
   end <- getCurrentTime
   putStrLn $ "Responses: " ++ show resps
   putStrLn $ "Time: " ++ show (diffUTCTime end start)
+  putStrLn ""
 ```
 
 We can run the above with `cabal run readme-pipeline-example`, which results in
-something like the following being printed to the screen:
+something like the following being printed to the screen.
 
 ```
+Sequential
 Pids: [three swaps]
 Responses: [(2,1),(3,2),(4,3),(5,4),(6,5),(7,6)]
 Time: 3.611045787s
+
+Pipelined
 Pids: [first swap,second swap,third swap]
 Responses: [(2,1),(3,2),(4,3),(5,4),(6,5),(7,6)]
 Time: 1.604990775s
+```
+
+Cool, we managed to reduce the total running time by more than half! We can do
+even better though! In addition to pipelining we can also shard the queues by
+letting two state machines work on the same queue, the first processing the
+elements in the even positions of the queue and the second proccessing the
+elements in the odd positions.
+
+```diff
+data P a b where
+  SM     :: String -> SM s a b -> s -> P a b
+  (:>>>) :: P a b -> P b c -> P a c
++ Shard  :: P a b -> P a b
+```
+
+Here's an example of a sharded pipeline.
+
+```haskell
+swapsSharded :: P (a, b) (b, a)
+swapsSharded =
+  Shard (SM "first swap"  swap ()) :>>>
+  Shard (SM "second swap" swap ()) :>>>
+  Shard (SM "third swap"  swap ())
+```
+
+And here's how it's deployed.
+
+```diff
++ deploy' (Shard p) d = do
++   let qIn = queue d
++   qEven  <- newTQueueIO
++   qOdd   <- newTQueueIO
++   pidIn  <- async $ shardQIn qIn qEven qOdd
++   dEven  <- deploy' p (Deployment qEven [])
++   dOdd   <- deploy' p (Deployment qOdd [])
++   qOut   <- newTQueueIO
++   pidOut <- async $ shardQOut (queue dEven) (queue dOdd) qOut
++   return (Deployment qOut (("shardIn:  " ++ names dEven ++ " & " ++ names dOdd, pidIn) :
++                            ("shardOut: " ++ names dEven ++ " & " ++ names dOdd, pidOut) :
++                            pids dEven ++ pids dOdd ++ pids d))
++   where
++     shardQIn :: TQueue a -> TQueue a -> TQueue a -> IO ()
++     shardQIn  qIn qEven qOdd = do
++       atomically (readTQueue qIn >>= writeTQueue qEven)
++       shardQIn qIn qOdd qEven
++
++     shardQOut :: TQueue a -> TQueue a -> TQueue a -> IO ()
++     shardQOut qEven qOdd qOut = do
++       atomically (readTQueue qEven >>= writeTQueue qOut)
++       shardQOut qOdd qEven qOut
+```
+
+Running this variant we see more than 3.5x speed up compared to the sequential
+pipeline.
+
+```
+Sharded
 Pids: [first swap,first swap,shardOut: [first swap] & [first swap],shardIn:  [first swap] & [first swap],second swap,second swap,shardOut: [second swap] & [second swap],shardIn:  [second swap] & [second swap],third swap,third swap,shardOut: [third swap] & [third swap],shardIn:  [third swap] & [third swap]]
 Responses: [(2,1),(3,2),(4,3),(5,4),(6,5),(7,6)]
 Time: 1.00241912s
 ```
+
+There are a many more improvements to be made here:
+
+  * Avoid spawning threads for merely shuffling elements between queues;
+  * Avoid copying elements between queues;
+  * Back-pressure;
+  * Batching.
+
+I believe all these problems can be solved by choosing a better queue data
+structure than `TQueue`, so that's what we'll have a look at next.
 
 ## Disruptor
 
@@ -306,10 +439,10 @@ that the consumer can effectively batch the processing.
 
 ### Performance
 
-`pipelined-state-machines`, which hasn't been optimised much yet, is about 2x
+Our Disruptor implementation, which hasn't been optimised much yet, is about 2x
 slower than LMAX's Java version on their single-producer single-consumer
 [benchmark](https://github.com/LMAX-Exchange/disruptor/blob/master/src/perftest/java/com/lmax/disruptor/sequenced/OneToOneSequencedThroughputTest.java)
-(1P1C) (basically the above example) on a ~2 years old Linux laptop.
+(1P1C) (basically the above example) on a couple of years old Linux laptop.
 
 The same benchmark compared to other Haskell libraries:
 
@@ -373,6 +506,7 @@ results when trying to reproduce the numbers, then please file an issue.
 ## Contributing
 
 * `FanOut :: P a b -> P a c -> P a (b, c)` and `Par :: P a c -> P b d -> P (a, b) (c, d)`
+* Sum-types and error handling?
 * Binary to N-ary
 * Visualise pipeline using `dot` or similar
 * Arrow syntax or monadic DSL for pipelines?
@@ -380,6 +514,14 @@ results when trying to reproduce the numbers, then please file an issue.
    + avoid extra processes for sharding
    + avoiding copying between queues
 * gen_event
+* https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/OneToOneConcurrentArrayQueue.java
+* https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/ManyToOneConcurrentArrayQueue.java
+* https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/ManyToManyConcurrentArrayQueue.java
+* Performance/cost simulator of pipelines?
+* Compare to Pipes, conduit and streamly?
+* Pipeline = DAG to make best use of CPUs/cores on one machine, what's the layer
+  above? Topology = graph of machines?
+* Upgrading pipelines?
 
 ## See also
 

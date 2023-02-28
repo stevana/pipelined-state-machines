@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Main where
 
@@ -69,6 +70,9 @@ names = bracket . intercalate "," . reverse . map fst . pids
   where
     bracket s = "[" ++ s ++ "]"
 
+stop :: Deployment a -> IO ()
+stop = mapM_ (cancel . snd) . pids
+
 deploy' :: P a b -> Deployment a -> IO (Deployment b)
 deploy' (SM name sm s0) d = do
   q' <- newTQueueIO
@@ -121,6 +125,7 @@ swapsSharded =
   Shard (SM "third swap"  swap ())
 
 data PipelineKind = Sequential | Pipelined | Sharded
+  deriving Show
 
 main :: IO ()
 main = do
@@ -132,35 +137,14 @@ libMain k = do
                        Sequential -> swapsSequential
                        Pipelined  -> swapsPipelined
                        Sharded    -> swapsSharded
+  print k
   putStrLn $ "Pids: " ++ names d
-  start <- getCurrentTime
+  !start <- getCurrentTime
   forM_ [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)] $ \x ->
     atomically $ writeTQueue q x
-  resps <- replicateM 6 $ atomically $ readTQueue (queue d)
-  end <- getCurrentTime
+  !resps <- replicateM 6 $ atomically $ readTQueue (queue d)
+  !end <- getCurrentTime
   putStrLn $ "Responses: " ++ show resps
   putStrLn $ "Time: " ++ show (diffUTCTime end start)
-
--- ```
--- > import Pipeline
--- > mapM_ libMain [Sequential, Pipelined, Sharded]
--- Pids: [three swaps]
--- Responses: [(2,1),(3,2),(4,3),(5,4),(6,5),(7,6)]
--- Time: 3.611045787s
--- Pids: [first swap,second swap,third swap]
--- Responses: [(2,1),(3,2),(4,3),(5,4),(6,5),(7,6)]
--- Time: 1.604990775s
--- Pids: [first swap,first swap,shardOut: [first swap] & [first swap],shardIn:  [first swap] & [first swap],second swap,second swap,shardOut: [second swap] & [second swap],shardIn:  [second swap] & [second swap],third swap,third swap,shardOut: [third swap] & [third swap],shardIn:  [third swap] & [third swap]]
--- Responses: [(2,1),(3,2),(4,3),(5,4),(6,5),(7,6)]
--- Time: 1.00241912s
--- ```
-
--- FanOut :: P a b -> P a c -> P a (b, c)
--- Par    :: P a c -> P b d -> P (a, b) (c, d)
--- Binary to N-ary
--- Visualise pipeline using dot or similar
--- Arrow syntax or monadic DSL for pipelines?
--- Disruptor
---   - avoid extra processes for sharding
---   - avoiding copying between queues
--- gen_event?
+  putStrLn ""
+  stop d
