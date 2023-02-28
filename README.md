@@ -533,7 +533,6 @@ There's a lot of possible paths to explore from here, including:
       [`pipes`](https://hackage.haskell.org/package/pipes),
       [`conduit`](https://hackage.haskell.org/package/conduit) and
       [`streamly`](https://hackage.haskell.org/package/streamly)?
-
 - [ ] I like to think of how one constructs a pipeline, i.e. the choice of which
       tasks should happen in parallel or should be sharded etc, as a choice of
       how to best make use of the CPUs/cores of a single computer. If seen this
