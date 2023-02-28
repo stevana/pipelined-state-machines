@@ -5,7 +5,7 @@ An experiment in declaratively programming parallel pipelines of state machines.
 ## Motivation
 
 Imagine a flat complex in Sweden. Being the socialist utopia Sweden is there's a
-shared laundery room which the people in the flat complex can book. In the
+shared laundry room which the people in the flat complex can book. In the
 laundry room there's everything one needs to wash, dry and iron your clothes.
 You don't even need to bring your own laundry detergent!
 
@@ -222,7 +222,7 @@ Time: 1.604990775s
 Cool, we managed to reduce the total running time by more than half! We can do
 even better though! In addition to pipelining we can also shard the queues by
 letting two state machines work on the same queue, the first processing the
-elements in the even positions of the queue and the second proccessing the
+elements in the even positions of the queue and the second processing the
 elements in the odd positions.
 
 ```diff
@@ -537,7 +537,7 @@ There's a lot of possible paths to explore from here, including:
 - [ ] I like to think of how one constructs a pipeline, i.e. the choice of which
       tasks should happen in parallel or should be sharded etc, as a choice of
       how to best make use of the CPUs/cores of a single computer. If seen this
-      way then that begs the question: what about a network of multipel
+      way then that begs the question: what about a network of multiple
       computers? Perhaps there should be something like a `Topology` data type
       which describes how multiple pipelines interact and a topology is deployed
       by deploying multiple pipelines over multiple machines?
