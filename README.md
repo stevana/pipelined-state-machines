@@ -42,14 +42,11 @@ machines are utilised better. Also note that if each person would start a new
 washing after they finish ironing the first one and so on then the time savings
 would be even greater.
 
-This optimisation is called pipelining.
-
-It's used a lot in manufacturing, for example Airbus
-[builds](https://youtu.be/oxjT7veKi9c?t=2682) two airplanes per day. If you were
-to order a plane today you'd get it delivered in two months time. How is that
-they deliver two per day if it takes two months to build them? Pipelining!
-
-It's also used inside CPUs to [pipeline
+This optimisation is called pipelining. It's used a lot in manufacturing, for
+example Airbus [builds](https://youtu.be/oxjT7veKi9c?t=2682) two airplanes per
+day. If you were to order a plane today you'd get it delivered in two months
+time. How is that they deliver two per day if it takes two months to build them?
+Pipelining! It's also used inside CPUs to [pipeline
 instructions](https://en.wikipedia.org/wiki/Instruction_pipelining).
 
 The rest of this document is an experiment in how we can construct such
@@ -72,7 +69,8 @@ data SM s a b where
 ```
 
 Here's an example of a stage which takes an ordered pair as input and swaps the
-elements of the pair.
+elements of the pair. Note the use of `SlowIO` to simulate that some slow I/O
+computation happens.
 
 ```haskell
 swap :: SM () (a, b) (b, a)
@@ -288,8 +286,8 @@ There are a many more improvements to be made here:
   * Back-pressure;
   * Batching.
 
-I believe all these problems can be solved by choosing a better queue data
-structure than `TQueue`, so that's what we'll have a look at next.
+I believe all these problems can be solved by choosing a better concurrent queue
+data structure than `TQueue`, so that's what we'll have a look at next.
 
 ## Disruptor
 
@@ -505,23 +503,44 @@ results when trying to reproduce the numbers, then please file an issue.
 
 ## Contributing
 
-* `FanOut :: P a b -> P a c -> P a (b, c)` and `Par :: P a c -> P b d -> P (a, b) (c, d)`
-* Sum-types and error handling?
-* Binary to N-ary
-* Visualise pipeline using `dot` or similar
-* Arrow syntax or monadic DSL for pipelines?
-* Disruptor
-   + avoid extra processes for sharding
-   + avoiding copying between queues
-* gen_event
-* https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/OneToOneConcurrentArrayQueue.java
-* https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/ManyToOneConcurrentArrayQueue.java
-* https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/ManyToManyConcurrentArrayQueue.java
-* Performance/cost simulator of pipelines?
-* Compare to Pipes, conduit and streamly?
-* Pipeline = DAG to make best use of CPUs/cores on one machine, what's the layer
-  above? Topology = graph of machines?
-* Upgrading pipelines?
+There's a lot of possible paths to explore from here, including:
+
+- [ ] Can we swap out our use of `TQueue` for `Disruptor` in our `deploy` of
+      `P`ipelines?
+- [ ] Can we add something like a `FanOut :: P a b -> P a c -> P a (b, c)` and a
+      `Par :: P a c -> P b d -> P (a, b) (c, d)` combinator to allow two
+      parallel queues?
+- [ ] What about sum-types and error handling?
+- [ ] Our current, and the above just mentioned, pipeline combinators are all
+      binary to can we generalise this to N-ary?
+- [ ] Can we visualise pipelines using `dot` or similar?
+- [ ] Can we build a performance/cost simulator of pipelines?
+- [ ] Arrow syntax or monadic DSL for pipelines?
+- [ ] We've seen
+      [previously](https://github.com/stevana/hot-swapping-state-machines) how
+      we can hot-code upgrade state machines, what about hot-code upgrading
+      pipelines?
+- [ ] Can we implement the Erlang `gen_event` behaviour using Disruptor?
+- [ ] Would it make sense to use the spiritual successor of the Disruptor
+      instead, i.e. the different array queues from `aeron` and `agrona`:
+  + [Single-producer
+    single-consumer](https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/OneToOneConcurrentArrayQueue.java);
+  + [Multiple-producers
+    single-consumer](https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/ManyToOneConcurrentArrayQueue.java);
+  + [Multiple-producers
+    multiple-consumers](https://github.com/real-logic/agrona/blob/master/agrona/src/main/java/org/agrona/concurrent/ManyToManyConcurrentArrayQueue.java).
+- [ ] How exactly do these pipelines relate to the libraries
+      [`pipes`](https://hackage.haskell.org/package/pipes),
+      [`conduit`](https://hackage.haskell.org/package/conduit) and
+      [`streamly`](https://hackage.haskell.org/package/streamly)?
+
+- [ ] I like to think of how one constructs a pipeline, i.e. the choice of which
+      tasks should happen in parallel or should be sharded etc, as a choice of
+      how to best make use of the CPUs/cores of a single computer. If seen this
+      way then that begs the question: what about a network of multipel
+      computers? Perhaps there should be something like a `Topology` data type
+      which describes how multiple pipelines interact and a topology is deployed
+      by deploying multiple pipelines over multiple machines?
 
 ## See also
 
@@ -555,6 +574,21 @@ results when trying to reproduce the numbers, then please file an issue.
       + 1,000,000 tx/s and less than 100 microseconds latency, he is no longer
         at LMAX though so we don't know if these exchanges are using the
         disruptor pattern.
+
+  * [*Aeron: Open-source high-performance
+    messaging*](https://youtube.com/watch?v=tM4YskS94b0) talk by Martin Thompson
+    (Strange Loop, 2014);
+
+  * *Aeron: What, Why and What Next?*
+    [talk](https://youtube.com/watch?v=p1bsloPeBzE) by Todd Montgomery (GOTO,
+    2015);
+
+  * *Cluster Consensus: when Aeron met Raft*
+    [talk](https://youtube.com/watch?v=GFfLCGW_5-w) by Martin Thompson (GOTO,
+    2018);
+
+  * *Fault Tolerant 24/7 Operations with Aeron Cluster*
+    [talk](https://youtube.com/watch?v=H9yqzfNiEb4) by Todd Montgomery (2022).
 
 ### Writings
 
