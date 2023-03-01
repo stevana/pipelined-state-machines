@@ -605,4 +605,6 @@ There's a lot of possible paths to explore from here, including:
   * The Disruptor [mailing list](https://groups.google.com/g/lmax-disruptor);
   * The Mechanical Sympathy [mailing list](https://groups.google.com/g/mechanical-sympathy);
   * [The LMAX Architecture](https://martinfowler.com/articles/lmax.html) by
-    Martin Fowler (2011).
+    Martin Fowler (2011);
+  * [Staged event-driven
+    architecture](https://en.wikipedia.org/wiki/Staged_event-driven_architecture).
