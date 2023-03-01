@@ -20,11 +20,14 @@ assuming each step takes one time unit, we get a situation like this:
 
           Person
             ^
-        Ann | W D I
-         Bo |       W D I
-    Cecilia |             W D I
+        Ann | W D I                             W = Washing
+         Bo |       W D I                       D = Drying
+    Cecilia |             W D I                 I = Ironing
             +-------------------> Time
             0 1 2 3 4 5 6 7 8 9
+
+Bo cannot start washing until Ann is done ironing, because Ann has booked the
+room for the whole cycle, and so on.
 
 If the booking system is more granular and allows booking a time slot per step
 then we can get a situation that looks like this:
@@ -38,9 +41,10 @@ then we can get a situation that looks like this:
             0 1 2 3 4 5 6 7 8 9
 
 It should be clear that the total time is shorter in this case, because the
-machines are utilised better. Also note that if each person would start a new
-washing after they finish ironing the first one and so on then the time savings
-would be even greater.
+machines are utilised better (Bo can start using the washing machine right after
+Ann is done with it). Also note that if each person would start a new washing
+after they finish ironing the first one and so on then the time savings would be
+even greater.
 
 This optimisation is called pipelining. It's used a lot in manufacturing, for
 example Airbus [builds](https://youtu.be/oxjT7veKi9c?t=2682) two airplanes per
@@ -130,9 +134,9 @@ swapsPipelined =
   SM "third swap"  swap ()
 ```
 
-A pipeline can be deployed, we'll use the following type to keep track of queue
-associated with the pipeline as well as the name and pids of the state machines
-involved in the pipeline.
+A pipeline can be deployed, we'll use the following type to keep track of the
+queue associated with the pipeline as well as the name and pids of the state
+machines involved in the pipeline.
 
 ```haskell
 data Deployment a = Deployment
@@ -175,18 +179,17 @@ deploy' (sm :>>> sm') d = do
   deploy' sm' d'
 ```
 
+We now have everything we need to run a simple benchmark comparing the
+sequential version of three swaps versus the pipelined version.
+
 ```haskell
 data PipelineKind = Sequential | Pipelined
   deriving Show
-```
 
-```haskell
 main :: IO ()
 main = do
   mapM_ libMain [Sequential, Pipelined]
-```
 
-```haskell
 libMain :: PipelineKind -> IO ()
 libMain k = do
   (q, d) <- deploy $ case k of
@@ -232,7 +235,9 @@ data P a b where
 + Shard  :: P a b -> P a b
 ```
 
-Here's an example of a sharded pipeline.
+Here's an example of a sharded pipeline, where each shard will spawn two state
+machines (one working on the even indexes of the queue and the other on the
+odd).
 
 ```haskell
 swapsSharded :: P (a, b) (b, a)
@@ -242,7 +247,11 @@ swapsSharded =
   Shard (SM "third swap"  swap ())
 ```
 
-And here's how it's deployed.
+In the deployment of shards, we achieve the even-odd split by reading from the
+input queue, `qIn`, and first writing to the even queue, `qEven`, and then
+switching over to the odd queue, `qOdd`, when making the recursive call in
+`shardQIn`. Whereas `shardQOut` does the inverse and merges the two queues back
+into the output queue:
 
 ```diff
 + deploy' (Shard p) d = do
@@ -269,7 +278,7 @@ And here's how it's deployed.
 +       shardQOut qOdd qEven qOut
 ```
 
-Running this variant we see more than 3.5x speed up compared to the sequential
+Running this version we see more than 3.5x speed-up compared to the sequential
 pipeline.
 
 ```
@@ -279,9 +288,10 @@ Responses: [(2,1),(3,2),(4,3),(5,4),(6,5),(7,6)]
 Time: 1.00241912s
 ```
 
-There are a many more improvements to be made here:
+There are still many more improvements to be made here:
 
-  * Avoid spawning threads for merely shuffling elements between queues;
+  * Avoid spawning threads for merely shuffling elements between queues, e.g.
+    `shardQ{In, Out}` above;
   * Avoid copying elements between queues;
   * Back-pressure;
   * Batching.
