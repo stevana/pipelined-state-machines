@@ -543,6 +543,19 @@ There's a lot of possible paths to explore from here, including:
       [`pipes`](https://hackage.haskell.org/package/pipes),
       [`conduit`](https://hackage.haskell.org/package/conduit) and
       [`streamly`](https://hackage.haskell.org/package/streamly)?
+- [ ] How does it relate to synchronous programming languages such as
+      [Esterel](https://en.wikipedia.org/wiki/Esterel),
+      [Lustre](https://en.wikipedia.org/wiki/Lustre_(programming_language)),
+      [ReactiveML](https://rml.lri.fr), etc? It seems to me that their main
+      motivation is to be concurrent or parallel while still determinstic, which
+      is what we'd like as well. Looking at ReactiveML's documentation for
+      [compositions](https://rml.lri.fr/documentation.html#compositions) we see
+      the same constructs as we've discussed: their `;` is our `Compose` (with
+      its arguments flipped), their `||` is our `FanOut`, their `|>` is our
+      `:>>>` and their `let-and` construct could be achived by adding projection
+      functions to our `P`ipelines similar to `Fst` and `Snd` for `SM`.
+      Interestingly they don't have any sum-types-like construct here, i.e.
+      something like `(:|||) :: P a c -> P b c -> P (Either a b) c`;
 - [ ] I like to think of how one constructs a pipeline, i.e. the choice of which
       tasks should happen in parallel or should be sharded etc, as a choice of
       how to best make use of the CPUs/cores of a single computer. If seen this
@@ -607,4 +620,5 @@ There's a lot of possible paths to explore from here, including:
   * [The LMAX Architecture](https://martinfowler.com/articles/lmax.html) by
     Martin Fowler (2011);
   * [Staged event-driven
-    architecture](https://en.wikipedia.org/wiki/Staged_event-driven_architecture).
+    architecture](https://en.wikipedia.org/wiki/Staged_event-driven_architecture);
+  * [The Reactive Manifesto](https://www.reactivemanifesto.org/).
