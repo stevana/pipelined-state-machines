@@ -621,4 +621,5 @@ There's a lot of possible paths to explore from here, including:
     Martin Fowler (2011);
   * [Staged event-driven
     architecture](https://en.wikipedia.org/wiki/Staged_event-driven_architecture);
-  * [The Reactive Manifesto](https://www.reactivemanifesto.org/).
+  * [The Reactive Manifesto](https://www.reactivemanifesto.org/);
+  * [Flow-based programming](https://en.wikipedia.org/wiki/Flow-based_programming).
